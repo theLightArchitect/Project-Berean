@@ -3,15 +3,18 @@
 //! (corpus.rs, crossref.rs, lexicon.rs, criticism.rs, confessions.rs,
 //! patristics.rs, translations.rs, pastoral.rs, journal.rs), not here.
 
-use rmcp::handler::server::router::tool::ToolRouter;
+use std::sync::{Arc, Mutex};
+
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ServerHandler};
+use rusqlite::Connection;
 
 use crate::confessions::{self, ConfessionQuery};
 use crate::corpus::{self, PassageQuery};
 use crate::criticism::{self, VariantQuery};
 use crate::crossref::{self, CrossRefQuery};
+use crate::db;
 use crate::journal::{self, ReadJournalQuery, WriteJournalQuery};
 use crate::lexicon::{self, LexiconQuery};
 use crate::pastoral::{self, PastoralSignalQuery};
@@ -20,13 +23,18 @@ use crate::translations::{self, CompareTranslationsQuery};
 
 #[derive(Clone)]
 pub struct BereanEngine {
-    tool_router: ToolRouter<Self>,
+    /// Opened once at startup (see `db.rs`) and shared behind a mutex —
+    /// `rusqlite::Connection` isn't `Sync`, and the MCP router may dispatch
+    /// concurrent tool calls. `None` when no corpus database is configured
+    /// or built yet; every lookup module treats that exactly like
+    /// "not found", never as a different kind of failure.
+    db: Arc<Mutex<Option<Connection>>>,
 }
 
 impl Default for BereanEngine {
     fn default() -> Self {
         Self {
-            tool_router: Self::tool_router(),
+            db: Arc::new(Mutex::new(db::open())),
         }
     }
 }
@@ -37,21 +45,25 @@ impl BereanEngine {
         description = "Retrieve scripture text verbatim by reference and translation. Returns found=false rather than guessing when the passage isn't in the corpus."
     )]
     async fn lookup_passage(&self, Parameters(query): Parameters<PassageQuery>) -> String {
-        serde_json::to_string(&corpus::lookup_passage(query)).unwrap_or_default()
+        let guard = self.db.lock().unwrap_or_else(|e| e.into_inner());
+        serde_json::to_string(&corpus::lookup_passage(query, guard.as_ref())).unwrap_or_default()
     }
 
     #[tool(
         description = "Look up curated and AI-suggested cross-references for a passage, kept clearly separate."
     )]
     async fn lookup_crossrefs(&self, Parameters(query): Parameters<CrossRefQuery>) -> String {
-        serde_json::to_string(&crossref::lookup_crossrefs(query)).unwrap_or_default()
+        let guard = self.db.lock().unwrap_or_else(|e| e.into_inner());
+        serde_json::to_string(&crossref::lookup_crossrefs(query, guard.as_ref()))
+            .unwrap_or_default()
     }
 
     #[tool(
-        description = "Look up Strong's number, morphology, and semantic range for a word or Strong's number."
+        description = "Look up a Strong's number's lemma, transliteration, morphology, gloss, and full definition."
     )]
     async fn lookup_lexicon(&self, Parameters(query): Parameters<LexiconQuery>) -> String {
-        serde_json::to_string(&lexicon::lookup_lexicon(query)).unwrap_or_default()
+        let guard = self.db.lock().unwrap_or_else(|e| e.into_inner());
+        serde_json::to_string(&lexicon::lookup_lexicon(query, guard.as_ref())).unwrap_or_default()
     }
 
     #[tool(
@@ -116,22 +128,17 @@ impl BereanEngine {
 #[tool_handler]
 impl ServerHandler for BereanEngine {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            server_info: rmcp::model::Implementation {
-                name: "berean-engine".into(),
-                version: env!("CARGO_PKG_VERSION").into(),
-                ..Default::default()
-            },
-            instructions: Some(
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(rmcp::model::Implementation::new(
+                "berean-engine",
+                env!("CARGO_PKG_VERSION"),
+            ))
+            .with_instructions(
                 "Verbatim scripture retrieval, cross-reference graph, lexicon, manuscript \
                  variants, confessions, patristics, translation comparison, pastoral-signal \
                  triage, and journal access for Project Berean. Every tool returns its source \
                  or an explicit not-found/not-classified/not-persisted — never a fabricated \
-                 answer or a false claim of safety or durability."
-                    .into(),
-            ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+                 answer or a false claim of safety or durability.",
+            )
     }
 }
