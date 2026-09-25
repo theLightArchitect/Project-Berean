@@ -5,7 +5,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ServerHandler};
@@ -24,7 +23,6 @@ use crate::translations::{self, CompareTranslationsQuery};
 
 #[derive(Clone)]
 pub struct BereanEngine {
-    tool_router: ToolRouter<Self>,
     /// Opened once at startup (see `db.rs`) and shared behind a mutex —
     /// `rusqlite::Connection` isn't `Sync`, and the MCP router may dispatch
     /// concurrent tool calls. `None` when no corpus database is configured
@@ -36,7 +34,6 @@ pub struct BereanEngine {
 impl Default for BereanEngine {
     fn default() -> Self {
         Self {
-            tool_router: Self::tool_router(),
             db: Arc::new(Mutex::new(db::open())),
         }
     }
@@ -131,22 +128,17 @@ impl BereanEngine {
 #[tool_handler]
 impl ServerHandler for BereanEngine {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            server_info: rmcp::model::Implementation {
-                name: "berean-engine".into(),
-                version: env!("CARGO_PKG_VERSION").into(),
-                ..Default::default()
-            },
-            instructions: Some(
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(rmcp::model::Implementation::new(
+                "berean-engine",
+                env!("CARGO_PKG_VERSION"),
+            ))
+            .with_instructions(
                 "Verbatim scripture retrieval, cross-reference graph, lexicon, manuscript \
                  variants, confessions, patristics, translation comparison, pastoral-signal \
                  triage, and journal access for Project Berean. Every tool returns its source \
                  or an explicit not-found/not-classified/not-persisted — never a fabricated \
-                 answer or a false claim of safety or durability."
-                    .into(),
-            ),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+                 answer or a false claim of safety or durability.",
+            )
     }
 }
