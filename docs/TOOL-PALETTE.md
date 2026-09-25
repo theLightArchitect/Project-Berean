@@ -74,18 +74,28 @@ never need to change — only the datasets behind them.
 
 ### Already in the engine — now with a designated backing dataset
 
-| Tool | Backing data (v1) | Licensed upgrade path |
-|---|---|---|
-| `lookup_passage` | BSB + WEB/KJV/ASV | ESV/NIV/NASB via license |
-| `lookup_lexicon` | TBESG + Dodson (Greek), BDB (Hebrew), Strong's | BDAG, HALOT |
-| `lookup_crossrefs` | TSK + OpenBible 340k (curated); embeddings (ai_suggested) | — |
-| `lookup_manuscript_variants` | CNTR transcriptions | NA28/UBS5 apparatus |
-| `search_patristics` | CCEL ANF/NPNF | modern critical editions |
-| `lookup_confession` | PD creed/confession texts | modern translations of same |
-| `compare_translations` | the open translation set above | grows with licensed translations |
+| Tool | Backing data (v1) | Status | Licensed upgrade path |
+|---|---|---|---|
+| `lookup_passage` | BSB (31,086 verses) | ✅ live | ESV/NIV/NASB via license |
+| `lookup_crossrefs` | TSK-derived, ~430k refs (curated); embeddings (ai_suggested) | ✅ curated live, ai_suggested not started | — |
+| `lookup_lexicon` | STEPBible TBESH/TBESG + Abbott-Smith/BDB, ~19k entries | ✅ live | BDAG, HALOT |
+| `lookup_manuscript_variants` | CNTR transcriptions | not started | NA28/UBS5 apparatus |
+| `search_patristics` | CCEL ANF/NPNF | not started | modern critical editions |
+| `lookup_confession` | PD creed/confession texts | not started | modern translations of same |
+| `compare_translations` | the open translation set above | not started | grows with licensed translations |
 
 (`detect_pastoral_signal`, `read_journal`, `write_journal` are safety/
 continuity tools — no scholarly dataset applies.)
+
+**How the three ✅ tools actually got built:** rather than ingesting raw
+STEPBible TSVs directly (the original plan below), we used
+[BSB-publishing/bsb-data-output](https://github.com/BSB-publishing/bsb-data-output),
+which had already done the hard alignment work — joining BSB text,
+STEPBible/OSHB morphology, and TSK cross-references into clean per-verse
+JSON/JSONL. That turned out to be the better path: less parsing risk, and
+someone else's tested pipeline instead of ours. See `engine/README.md` for
+the build command and `ATTRIBUTION.md` for the CC-BY requirements this
+brings (OSHB morphology, STEPBible extended lexicons).
 
 ### New tools the research says are missing
 
@@ -122,13 +132,18 @@ it's *the* taught method and worth naming as a first-class mode.
 
 ## 4. Suggested build order
 
-1. **Corpus ingestion: BSB + TAGNT/TAHOT** → makes `lookup_passage`,
-   `get_interlinear`, and `search_concordance` real. This is the unlock for
-   everything else.
-2. **TBESG/BDB lexicons** → `lookup_lexicon` real.
-3. **TSK/OpenBible cross-refs** → `lookup_crossrefs` curated side real.
-4. **MACULA layers** → semantic domains + discourse features.
-5. **CNTR, CCEL, creeds, geocoding** → the depth tools.
+1. ✅ **Corpus ingestion: BSB text + cross-refs + lexicon**, via
+   `BSB-publishing/bsb-data-output` — `lookup_passage`, `lookup_crossrefs`
+   (curated), and `lookup_lexicon` are all real now.
+2. **`get_interlinear` and `search_concordance`** — the same source repo has
+   this data too (`base/display/` for word-aligned English+Strong's,
+   `base/concordance/strongs-to-verses.json` for the concordance); it just
+   isn't wired into a tool yet.
+3. **MACULA layers** → semantic domains + discourse features (adds original-
+   language word forms alongside the English-only interlinear above).
+4. **CNTR, CCEL, creeds, geocoding** → the remaining depth tools
+   (`lookup_manuscript_variants`, `search_patristics`, `lookup_confession`,
+   the future `lookup_place`).
 
 ## Sources
 
