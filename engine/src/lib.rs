@@ -3,12 +3,14 @@
 //! exact same reference parser, database schema helpers, and domain
 //! contracts — no duplicated book-code tables or query logic to drift apart.
 
+pub mod concordance;
 pub mod confessions;
 pub mod corpus;
 pub mod criticism;
 pub mod crossref;
 pub mod db;
 pub mod engine;
+pub mod interlinear;
 pub mod journal;
 pub mod lexicon;
 pub mod pastoral;

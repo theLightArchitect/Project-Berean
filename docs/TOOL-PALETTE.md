@@ -101,12 +101,16 @@ brings (OSHB morphology, STEPBible extended lexicons).
 
 Ranked by how central they are to how people actually study:
 
-1. **`get_interlinear`** — word-by-word aligned original + gloss + Strong's +
-   morphology for a passage (TAGNT/TAHOT/MACULA). The single most-used
-   original-language feature across every platform studied. Feeds the
-   Passage Reader's tap-a-word interaction directly.
-2. **`search_concordance`** — every occurrence of a lemma/Strong's number,
-   with context snippets. The scholar's word-study workflow; pairs with
+1. ✅ **`get_interlinear`** — original-language words in their own reading
+   order, and the English rendering in its own reading order (each tagged by
+   Strong's number), for a passage. The single most-used original-language
+   feature across every platform studied. Feeds the Passage Reader's
+   tap-a-word interaction directly. **Not** a word-for-word aligned table —
+   Hebrew/Greek word order differs from English syntax often enough that
+   positionally zipping the two arrays would misrepresent the correspondence;
+   see `engine/src/interlinear.rs`.
+2. ✅ **`search_concordance`** — every occurrence of a Strong's number, in
+   canonical Bible order. The scholar's word-study workflow; pairs with
    `lookup_lexicon` the way BLB pairs Strong's with its concordance.
 3. **`get_semantic_domain`** — words related by meaning-domain, not just
    etymology (MACULA semantic domains). This is what prevents the classic
@@ -135,12 +139,12 @@ it's *the* taught method and worth naming as a first-class mode.
 1. ✅ **Corpus ingestion: BSB text + cross-refs + lexicon**, via
    `BSB-publishing/bsb-data-output` — `lookup_passage`, `lookup_crossrefs`
    (curated), and `lookup_lexicon` are all real now.
-2. **`get_interlinear` and `search_concordance`** — the same source repo has
-   this data too (`base/display/` for word-aligned English+Strong's,
-   `base/concordance/strongs-to-verses.json` for the concordance); it just
-   isn't wired into a tool yet.
-3. **MACULA layers** → semantic domains + discourse features (adds original-
-   language word forms alongside the English-only interlinear above).
+2. ✅ **`get_interlinear` and `search_concordance`**, via the same source
+   repo (`base/display/` for the word-by-word data, both original-language
+   and English reading orders; `base/concordance/strongs-to-verses.json`
+   for the concordance, already in canonical order).
+3. **MACULA layers** → semantic domains + discourse features (adds a
+   genuine word-alignment layer beyond what `get_interlinear` provides).
 4. **CNTR, CCEL, creeds, geocoding** → the remaining depth tools
    (`lookup_manuscript_variants`, `search_patristics`, `lookup_confession`,
    the future `lookup_place`).
