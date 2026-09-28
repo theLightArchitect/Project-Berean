@@ -126,13 +126,15 @@ MCP server (`engine/`), following the same quality bar as the rest of the
 Light Architects stack (no silent failures, no fabricated output). ADK
 agents call it as a tool alongside `VertexAiSearchTool`.
 
-Ten tools, each with its own contract module and enforcing unit test:
+Twelve tools, each with its own contract module and enforcing unit test:
 
 | Tool | Module | Backing data | Contract |
 |---|---|---|---|
 | `lookup_passage` | `corpus.rs` | ✅ BSB text (SQLite) | text or `found: false` — never a guess |
 | `lookup_crossrefs` | `crossref.rs` | ✅ ~430k TSK-derived refs (SQLite) | curated vs. `ai_suggested` always separate |
 | `lookup_lexicon` | `lexicon.rs` | ✅ ~19k Strong's entries (SQLite) | entry or `found: false` |
+| `get_interlinear` | `interlinear.rs` | ✅ ~437k original words + ~822k English segments (SQLite) | original- and English-reading-order arrays are separate, never positionally zipped |
+| `search_concordance` | `concordance.rs` | ✅ ~372k occurrences (SQLite) | canonical order; a valid Strong's number with zero hits is a real answer, not an error |
 | `lookup_manuscript_variants` | `criticism.rs` | stub | `checked: false` means "not consulted," never "no variants" |
 | `lookup_confession` | `confessions.rs` | stub | verbatim text or `found: false` |
 | `search_patristics` | `patristics.rs` | stub | citations or empty — never invented |
@@ -143,9 +145,14 @@ Ten tools, each with its own contract module and enforcing unit test:
 
 The common thread: every tool distinguishes "we don't know yet" from "we
 checked and it's clear" — and the agent layer is instructed to treat those
-as different things, not collapse them.
+as different things, not collapse them. `get_interlinear` is the sharpest
+example: Hebrew/Greek word order routinely differs from natural English
+syntax, so the original-language array and the English array are stored and
+returned as two independent reading orders rather than a word-for-word
+table — zipping them by index would silently assert a specific word
+correspondence the source data doesn't actually claim.
 
-The three ✅ tools are backed by a local SQLite database (`engine/corpus.db`)
+The five ✅ tools are backed by a local SQLite database (`engine/corpus.db`)
 built by `engine/src/bin/ingest.rs` from
 [BSB-publishing/bsb-data-output](https://github.com/BSB-publishing/bsb-data-output)
 — see `engine/README.md` to build it and `docs/TOOL-PALETTE.md` /

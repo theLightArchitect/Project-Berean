@@ -60,6 +60,16 @@ def test_whole_counsel_agent_scoped_to_primary_source_tools():
     }
 
 
+def test_lexicon_agent_scoped_to_word_study_tools():
+    from berean_agents.sub_agents.lexicon_agent import lexicon_agent
+
+    assert _mcp_tool_filter(lexicon_agent) == {
+        "lookup_lexicon",
+        "get_interlinear",
+        "search_concordance",
+    }
+
+
 def test_no_two_agents_share_the_same_engine_tool():
     # Each Berean Engine tool should belong to exactly one agent's contract —
     # overlap would blur which agent is accountable for a given claim.

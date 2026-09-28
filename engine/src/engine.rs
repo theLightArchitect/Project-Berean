@@ -1,7 +1,8 @@
 //! The MCP surface: each tool delegates to its contract module. Kept thin
 //! on purpose — the "never fabricate" logic lives in the per-domain modules
-//! (corpus.rs, crossref.rs, lexicon.rs, criticism.rs, confessions.rs,
-//! patristics.rs, translations.rs, pastoral.rs, journal.rs), not here.
+//! (corpus.rs, crossref.rs, lexicon.rs, interlinear.rs, concordance.rs,
+//! criticism.rs, confessions.rs, patristics.rs, translations.rs,
+//! pastoral.rs, journal.rs), not here.
 
 use std::sync::{Arc, Mutex};
 
@@ -10,11 +11,13 @@ use rmcp::model::{ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 use rusqlite::Connection;
 
+use crate::concordance::{self, ConcordanceQuery};
 use crate::confessions::{self, ConfessionQuery};
 use crate::corpus::{self, PassageQuery};
 use crate::criticism::{self, VariantQuery};
 use crate::crossref::{self, CrossRefQuery};
 use crate::db;
+use crate::interlinear::{self, InterlinearQuery};
 use crate::journal::{self, ReadJournalQuery, WriteJournalQuery};
 use crate::lexicon::{self, LexiconQuery};
 use crate::pastoral::{self, PastoralSignalQuery};
@@ -64,6 +67,24 @@ impl BereanEngine {
     async fn lookup_lexicon(&self, Parameters(query): Parameters<LexiconQuery>) -> String {
         let guard = self.db.lock().unwrap_or_else(|e| e.into_inner());
         serde_json::to_string(&lexicon::lookup_lexicon(query, guard.as_ref())).unwrap_or_default()
+    }
+
+    #[tool(
+        description = "Get the word-by-word interlinear for a passage: original-language words in their own reading order, plus the English rendering in its own reading order, each tagged by Strong's number. The two arrays are NOT positionally aligned (Hebrew/Greek word order differs from English) — correlate them by shared Strong's number, never by index."
+    )]
+    async fn get_interlinear(&self, Parameters(query): Parameters<InterlinearQuery>) -> String {
+        let guard = self.db.lock().unwrap_or_else(|e| e.into_inner());
+        serde_json::to_string(&interlinear::get_interlinear(query, guard.as_ref()))
+            .unwrap_or_default()
+    }
+
+    #[tool(
+        description = "Look up every verse where a Strong's number occurs, in canonical Bible order."
+    )]
+    async fn search_concordance(&self, Parameters(query): Parameters<ConcordanceQuery>) -> String {
+        let guard = self.db.lock().unwrap_or_else(|e| e.into_inner());
+        serde_json::to_string(&concordance::search_concordance(query, guard.as_ref()))
+            .unwrap_or_default()
     }
 
     #[tool(
@@ -134,11 +155,12 @@ impl ServerHandler for BereanEngine {
                 env!("CARGO_PKG_VERSION"),
             ))
             .with_instructions(
-                "Verbatim scripture retrieval, cross-reference graph, lexicon, manuscript \
-                 variants, confessions, patristics, translation comparison, pastoral-signal \
-                 triage, and journal access for Project Berean. Every tool returns its source \
-                 or an explicit not-found/not-classified/not-persisted — never a fabricated \
-                 answer or a false claim of safety or durability.",
+                "Verbatim scripture retrieval, cross-reference graph, lexicon, interlinear, \
+                 concordance, manuscript variants, confessions, patristics, translation \
+                 comparison, pastoral-signal triage, and journal access for Project Berean. \
+                 Every tool returns its source or an explicit \
+                 not-found/not-classified/not-persisted — never a fabricated answer or a false \
+                 claim of safety or durability.",
             )
     }
 }

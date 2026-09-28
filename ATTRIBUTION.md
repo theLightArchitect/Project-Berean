@@ -10,6 +10,11 @@ here's what we actually use and what it requires:
 ## No attribution required (CC0 / public domain)
 
 - **Berean Standard Bible** verse text — `base/text-only/` — public domain.
+- **Word-by-word interlinear** (English + original-language words, tagged by
+  Strong's number) — `base/display/` — public domain. Powers
+  `get_interlinear`.
+- **Strong's concordance** (`strongs-to-verses.json`) — `base/concordance/`
+  — public domain. Powers `search_concordance`.
 
 ## Attribution required (CC BY 4.0)
 

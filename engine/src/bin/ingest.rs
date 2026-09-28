@@ -1,7 +1,8 @@
 //! Builds `corpus.db` from the open datasets described in
 //! `docs/TOOL-PALETTE.md`: BSB verse text (public domain), BSB's CC-BY
-//! cross-reference/topic index, and the BDB/Abbott-Smith-derived lexicon —
-//! all sourced from BSB-publishing/bsb-data-output.
+//! cross-reference/topic index, the BDB/Abbott-Smith-derived lexicon, the
+//! word-by-word interlinear (CC-BY, OSHB morphology), and the Strong's
+//! concordance — all sourced from BSB-publishing/bsb-data-output.
 //!
 //! Usage:
 //!   cargo run --bin ingest -- <path-to-bsb-data-output> <output-db-path>
@@ -45,6 +46,12 @@ fn main() -> anyhow::Result<()> {
 
     let lexicon_count = ingest_lexicon(&tx, &data_dir.join("base/lexicon"))?;
     println!("ingested {lexicon_count} lexicon entries");
+
+    let (original_count, english_count) = ingest_interlinear(&tx, &data_dir.join("base/display"))?;
+    println!("ingested {original_count} original-language words, {english_count} English segments");
+
+    let concordance_count = ingest_concordance(&tx, &data_dir.join("base/concordance"))?;
+    println!("ingested {concordance_count} concordance entries");
     tx.commit()?;
 
     Ok(())
@@ -84,6 +91,40 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             gloss TEXT,
             definition TEXT
         );
+
+        DROP TABLE IF EXISTS interlinear_original;
+        DROP TABLE IF EXISTS interlinear_english;
+        DROP TABLE IF EXISTS concordance;
+
+        CREATE TABLE interlinear_original (
+            book TEXT NOT NULL,
+            chapter INTEGER NOT NULL,
+            verse INTEGER NOT NULL,
+            seq INTEGER NOT NULL,
+            word TEXT NOT NULL,
+            strongs TEXT,
+            PRIMARY KEY (book, chapter, verse, seq)
+        );
+
+        CREATE TABLE interlinear_english (
+            book TEXT NOT NULL,
+            chapter INTEGER NOT NULL,
+            verse INTEGER NOT NULL,
+            seq INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            strongs TEXT,
+            elided INTEGER NOT NULL DEFAULT 0,
+            supplied INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (book, chapter, verse, seq)
+        );
+
+        CREATE TABLE concordance (
+            strongs TEXT NOT NULL,
+            seq INTEGER NOT NULL,
+            target_ref TEXT NOT NULL,
+            PRIMARY KEY (strongs, seq)
+        );
+        CREATE INDEX idx_concordance_strongs ON concordance(strongs);
         ",
     )
 }
@@ -234,6 +275,174 @@ fn ingest_lexicon(conn: &Connection, dir: &Path) -> anyhow::Result<u64> {
             entry.definition
         ])?;
         count += 1;
+    }
+    Ok(count)
+}
+
+/// Each segment in `base/display/{BOOK}/{BOOK}{chapter}.json`'s "eng"/"heb"/
+/// "grk" arrays is itself a 2- or 3-element JSON array: `[text, strongsOrNull]`
+/// or `[text, strongsOrNull, {elided?, supplied?}]`. Returns
+/// (text, strongs, elided, supplied).
+fn parse_segment(value: &Value) -> Option<(String, Option<String>, bool, bool)> {
+    let arr = value.as_array()?;
+    let text = arr.first()?.as_str()?.to_string();
+    let strongs = arr.get(1).and_then(|v| v.as_str()).map(str::to_string);
+    let (elided, supplied) = arr
+        .get(2)
+        .and_then(|v| v.as_object())
+        .map(|flags| {
+            (
+                flags
+                    .get("elided")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                flags
+                    .get("supplied")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            )
+        })
+        .unwrap_or((false, false));
+    Some((text, strongs, elided, supplied))
+}
+
+/// `base/display/{BOOK}/{BOOK}{chapter}.json`: one JSON object per file with
+/// "eng" (English, that testament's own reading order) and "heb" or "grk"
+/// (original language, its own reading order) keys, each mapping a verse
+/// number string to an array of segments. The two arrays are NOT
+/// positionally aligned — see interlinear.rs for why they're stored and
+/// queried as two independent reading orders rather than zipped.
+fn ingest_interlinear(conn: &Connection, dir: &Path) -> anyhow::Result<(u64, u64)> {
+    let known_codes: Vec<&str> = book_codes().collect();
+    let mut original_count = 0u64;
+    let mut english_count = 0u64;
+    let mut original_stmt = conn.prepare(
+        "INSERT INTO interlinear_original (book, chapter, verse, seq, word, strongs) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    )?;
+    let mut english_stmt = conn.prepare(
+        "INSERT INTO interlinear_english (book, chapter, verse, seq, text, strongs, elided, supplied) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+    )?;
+
+    for book_dir in fs::read_dir(dir)? {
+        let book_dir = book_dir?;
+        if !book_dir.file_type()?.is_dir() {
+            continue;
+        }
+        for entry in fs::read_dir(book_dir.path())? {
+            let entry = entry?;
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+            let Some(stem) = file_name.strip_suffix(".json") else {
+                continue;
+            };
+            if stem.len() < 4 {
+                continue;
+            }
+            let (book_candidate, chapter_str) = stem.split_at(3);
+            if !known_codes.contains(&book_candidate) {
+                continue;
+            }
+            let Ok(chapter) = chapter_str.parse::<u32>() else {
+                continue;
+            };
+
+            let content = fs::read_to_string(entry.path())?;
+            let Ok(parsed) = serde_json::from_str::<Value>(&content) else {
+                continue;
+            };
+            let Some(obj) = parsed.as_object() else {
+                continue;
+            };
+
+            let original_key = if obj.contains_key("heb") {
+                "heb"
+            } else {
+                "grk"
+            };
+            if let Some(original_verses) = obj.get(original_key).and_then(Value::as_object) {
+                for (verse_str, segments) in original_verses {
+                    let Ok(verse) = verse_str.parse::<u32>() else {
+                        continue;
+                    };
+                    let Some(segments) = segments.as_array() else {
+                        continue;
+                    };
+                    for (seq, segment) in segments.iter().enumerate() {
+                        let Some((word, strongs, _, _)) = parse_segment(segment) else {
+                            continue;
+                        };
+                        original_stmt.execute(rusqlite::params![
+                            book_candidate,
+                            chapter,
+                            verse,
+                            seq as u32,
+                            word,
+                            strongs
+                        ])?;
+                        original_count += 1;
+                    }
+                }
+            }
+
+            if let Some(eng_verses) = obj.get("eng").and_then(Value::as_object) {
+                for (verse_str, segments) in eng_verses {
+                    let Ok(verse) = verse_str.parse::<u32>() else {
+                        continue;
+                    };
+                    let Some(segments) = segments.as_array() else {
+                        continue;
+                    };
+                    for (seq, segment) in segments.iter().enumerate() {
+                        let Some((text, strongs, elided, supplied)) = parse_segment(segment) else {
+                            continue;
+                        };
+                        english_stmt.execute(rusqlite::params![
+                            book_candidate,
+                            chapter,
+                            verse,
+                            seq as u32,
+                            text,
+                            strongs,
+                            elided,
+                            supplied
+                        ])?;
+                        english_count += 1;
+                    }
+                }
+            }
+        }
+    }
+    Ok((original_count, english_count))
+}
+
+/// `base/concordance/strongs-to-verses.json`: one object keyed by Strong's
+/// number (padded and unpadded duplicate keys, as in the lexicon files),
+/// mapping to a list of compact references already in canonical Bible
+/// order. Deduplicated by canonical key the same way as the lexicon.
+fn ingest_concordance(conn: &Connection, dir: &Path) -> anyhow::Result<u64> {
+    let path = dir.join("strongs-to-verses.json");
+    let content = fs::read_to_string(&path)?;
+    let raw: HashMap<String, Vec<String>> = serde_json::from_str(&content)?;
+
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut stmt =
+        conn.prepare("INSERT INTO concordance (strongs, seq, target_ref) VALUES (?1, ?2, ?3)")?;
+    let mut count = 0u64;
+
+    for (key, refs) in raw {
+        let Some(canonical) = normalize_strongs(&key) else {
+            continue;
+        };
+        if !seen.insert(canonical.clone()) {
+            continue;
+        }
+        for (seq, compact_ref) in refs.iter().enumerate() {
+            let Some(display) = compact_id_to_display(compact_ref) else {
+                continue;
+            };
+            stmt.execute(rusqlite::params![canonical, seq as u32, display])?;
+            count += 1;
+        }
     }
     Ok(count)
 }
