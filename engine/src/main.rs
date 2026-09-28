@@ -1,15 +1,4 @@
-mod confessions;
-mod corpus;
-mod criticism;
-mod crossref;
-mod engine;
-mod journal;
-mod lexicon;
-mod pastoral;
-mod patristics;
-mod translations;
-
-use engine::BereanEngine;
+use berean_engine::engine::BereanEngine;
 use rmcp::transport::stdio;
 use rmcp::ServiceExt;
 

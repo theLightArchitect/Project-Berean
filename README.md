@@ -26,15 +26,19 @@ infra/         — GCP Terraform: API enablement, AlloyDB, Vertex AI Search
 
 ## Status
 
-Early scaffold. Agent topology and tool contracts are defined; corpus,
-cross-reference, lexicon, and other scholarly datasets are not yet loaded —
-every lookup honestly returns "not found" rather than a placeholder answer
-(see `engine/src/corpus.rs` and its sibling modules for the enforced
-contract).
+Agent topology and tool contracts are defined. Scripture text, curated
+cross-references, and the Strong's lexicon are real, open-licensed data
+(31k+ verses, ~430k cross-references, ~19k lexicon entries — see
+`engine/README.md` to build the database). Manuscript variants,
+confessional documents, patristic citations, and translation comparison are
+still stubs — every lookup honestly returns "not found" rather than a
+placeholder answer (see `engine/src/corpus.rs` and its sibling modules for
+the enforced contract).
 
 See `docs/ARCHITECTURE.md` for the full design, `docs/TOOL-PALETTE.md` for
-the research-backed data/tool roadmap, and the READMEs in `agents/` and
-`engine/` for how to build and run each piece.
+the research-backed data/tool roadmap, `ATTRIBUTION.md` for the open-data
+credit this project requires, and the READMEs in `agents/` and `engine/` for
+how to build and run each piece.
 
 ## License
 

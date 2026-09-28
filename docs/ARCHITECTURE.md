@@ -128,22 +128,31 @@ agents call it as a tool alongside `VertexAiSearchTool`.
 
 Ten tools, each with its own contract module and enforcing unit test:
 
-| Tool | Module | Contract |
-|---|---|---|
-| `lookup_passage` | `corpus.rs` | text or `found: false` — never a guess |
-| `lookup_crossrefs` | `crossref.rs` | curated vs. `ai_suggested` always separate |
-| `lookup_lexicon` | `lexicon.rs` | entry or `found: false` |
-| `lookup_manuscript_variants` | `criticism.rs` | `checked: false` means "not consulted," never "no variants" |
-| `lookup_confession` | `confessions.rs` | verbatim text or `found: false` |
-| `search_patristics` | `patristics.rs` | citations or empty — never invented |
-| `compare_translations` | `translations.rs` | `notable_divergence` only when actually confirmed |
-| `detect_pastoral_signal` | `pastoral.rs` | `classified: false` — never defaults to "confirmed safe" |
-| `read_journal` | `journal.rs` | real entries or empty — never fabricated history |
-| `write_journal` | `journal.rs` | `persisted: false` until real storage exists — never claims a save that didn't happen |
+| Tool | Module | Backing data | Contract |
+|---|---|---|---|
+| `lookup_passage` | `corpus.rs` | ✅ BSB text (SQLite) | text or `found: false` — never a guess |
+| `lookup_crossrefs` | `crossref.rs` | ✅ ~430k TSK-derived refs (SQLite) | curated vs. `ai_suggested` always separate |
+| `lookup_lexicon` | `lexicon.rs` | ✅ ~19k Strong's entries (SQLite) | entry or `found: false` |
+| `lookup_manuscript_variants` | `criticism.rs` | stub | `checked: false` means "not consulted," never "no variants" |
+| `lookup_confession` | `confessions.rs` | stub | verbatim text or `found: false` |
+| `search_patristics` | `patristics.rs` | stub | citations or empty — never invented |
+| `compare_translations` | `translations.rs` | stub | `notable_divergence` only when actually confirmed |
+| `detect_pastoral_signal` | `pastoral.rs` | n/a (safety) | `classified: false` — never defaults to "confirmed safe" |
+| `read_journal` | `journal.rs` | n/a (per-user) | real entries or empty — never fabricated history |
+| `write_journal` | `journal.rs` | n/a (per-user) | `persisted: false` until real storage exists — never claims a save that didn't happen |
 
 The common thread: every tool distinguishes "we don't know yet" from "we
 checked and it's clear" — and the agent layer is instructed to treat those
 as different things, not collapse them.
+
+The three ✅ tools are backed by a local SQLite database (`engine/corpus.db`)
+built by `engine/src/bin/ingest.rs` from
+[BSB-publishing/bsb-data-output](https://github.com/BSB-publishing/bsb-data-output)
+— see `engine/README.md` to build it and `docs/TOOL-PALETTE.md` /
+`ATTRIBUTION.md` for what's in it and what attribution it requires. This is
+a legitimate long-term shape for local/offline use (matching the Tier 3
+offline-first idea below), not just a placeholder for AlloyDB — the schema
+is simple enough to port either way without changing any tool's contract.
 
 ## Deployment shape
 
@@ -158,10 +167,13 @@ as different things, not collapse them.
 
 ## Deferred / not yet built
 
-- Corpus ingestion (translations, commentary tagged by tradition, secular
-  scholarship, lexicon data) — nothing is loaded yet.
-- The curated cross-reference dataset and the embedding-similarity path for
-  AI-suggested edges.
+- Tradition-tagged commentary and secular/historical-critical scholarship
+  (feeds Vertex AI Search for the Whole-Counsel and Skeptic agents) —
+  separate from the Berean Engine's SQLite corpus, still not sourced.
+- Manuscript variant apparatus, confessional documents, and the patristic
+  corpus (the three still-stub engine tools).
+- The embedding-similarity path for `ai_suggested` cross-references (the
+  curated side is real now).
 - Client apps (web/mobile) — not scaffolded yet.
-- Offline-first / on-device path (Tier 3 idea from initial brainstorm) —
-  worth keeping in mind for the AlloyDB/engine split, not a v1 concern.
+- Offline-first / on-device path (Tier 3 idea from initial brainstorm) — the
+  SQLite corpus DB is a step in that direction already.
